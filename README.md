@@ -4,7 +4,7 @@ Extract desired labels from unlabeled clinical text (e.g. radiology reports, cli
 
 # Instructions
 ```bash
-python scripts/labeler.py \
+torchrun scripts/labeler.py \
     --csv <path to csv file> \
     --text-column <name of text column> \
     --label-column <name of label column> \

@@ -169,7 +169,7 @@ def main():
     
 if __name__ == '__main__':
     """
-    How to run the script:
+    How to run the script example:
 
     > torchrun scripts/labeler.py \
         --csv data/LabeledVTE-Doppler.csv \
