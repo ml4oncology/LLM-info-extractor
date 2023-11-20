@@ -72,27 +72,19 @@ def download_pretrained_model(model_name: str, model_path: str):
 ###############################################################################
 def get_manually_labeled_data(
     df: pd.DataFrame, 
-    text_col: str, 
     label_col: str, 
     patient_col: str = 'mrn',
     verbose: bool = True
 ):
     mask = df[label_col].notnull()
     labeled_df = df[mask].copy()
-
     if verbose:
-        count = pd.concat([
-            labeled_df[label_col].value_counts(),
-            labeled_df.groupby(label_col).apply(lambda g: g[patient_col].nunique())
-        ], axis=1, keys=['Sessions', 'Patients']).sort_index()
+        count = get_label_count(labeled_df, label_col, patient_col)
         logger.info(f'\n{count}')
+    return labeled_df
 
-    X, Y = labeled_df[text_col], labeled_df[label_col]
-    return X, Y
-
-def prepare_dataset(X: pd.Series, Y: pd.Series, idxs: Sequence[int], tokenize_func: Callable):
-    text = X.iloc[idxs]
-    label = torch.LongTensor(Y.iloc[idxs].values)
+def prepare_dataset(X: pd.Series, Y: pd.Series, tokenize_func: Callable):
+    text, label = X, torch.LongTensor(Y.values)
     dataset = pd.DataFrame({'text': text, 'label': label})
     dataset = Dataset.from_pandas(dataset, preserve_index=False)
     dataset = dataset.map(tokenize_func, batched=True)
@@ -114,3 +106,13 @@ def compute_metrics(eval_pred):
         "PPV": precision_score(label, pred_bool, zero_division=0)
     }
     return result
+
+###############################################################################
+# Logging
+###############################################################################
+def get_label_count(df: pd.DataFrame, label_col: str, patient_col: str):
+    count = pd.concat([
+        df[label_col].value_counts(),
+        df.groupby(label_col).apply(lambda g: g[patient_col].nunique())
+    ], axis=1, keys=['Sessions', 'Patients']).sort_index()
+    return count
