@@ -29,7 +29,7 @@ import warnings
 warnings.filterwarnings("ignore", message="Was asked to gather along dimension 0, but all input tensors were scalars")
 # User warning occurs when using deepspeed
 warnings.filterwarnings("ignore", message="UserWarning: Positional args are being deprecated, use kwargs instead.")
-logger.addHandler(logging.StreamHandler(sys.stdout))
+# logger.addHandler(logging.StreamHandler(sys.stdout))
 logger.addHandler(logging.FileHandler(f'{ROOT_DIR}/results/logs/{datetime.datetime.now()}.log', mode='w'))
 
 def parse_args():
@@ -62,12 +62,17 @@ def main():
         cfg = yaml.safe_load(file)
     LABEL, PATIENT, DATE, TEXT = cfg['label_col'], cfg['patient_col'], cfg['date_col'], cfg['text_col']
     df = pd.read_csv(csv_path, parse_dates=[DATE])
-    df = get_manually_labeled_data(df, label_col=LABEL, patient_col=PATIENT)
+    df = get_manually_labeled_data(df, label_col=LABEL, patient_col=PATIENT, verbose=True)
 
     # Create training arguments
-    training_args = TrainingArguments(**cfg['training_args'])
+    training_args = TrainingArguments(
+        # output directory where the model predictions and checkpoints will be written.
+        output_dir=f'{ROOT_DIR}/results/{model_name}-{LABEL}',
+        overwrite_output_dir=True,
+        **cfg['training_args']
+    )
     early_stop_callback = EarlyStoppingCallback(early_stopping_patience=cfg['early_stopping_patience'])
-    kwargs = {'args': training_args, 'compute_metrics': compute_metrics, 'callbacks': [early_stop_callback]}
+    kwargs = {'args': training_args, 'compute_metrics': compute_metrics}
 
     # Split the data into development and testing set
     test_mask = df[DATE].dt.year >= cfg['test_split_year']
@@ -79,8 +84,7 @@ def main():
     time_splits = pd.date_range(
         pd.Timestamp(year=cfg['dev_start_year'], month=1, day=1), 
         pd.Timestamp(year=cfg['test_split_year'], month=1, day=1),
-        freq=f"{cfg['interval']}M", 
-        closed='left' # inclusive='left'
+        freq=f"{cfg['interval']}MS", # MS - Month Start 
     )
     time_splits = time_splits[1:] # discard the first date - no need
     # run the cross validation
@@ -89,7 +93,7 @@ def main():
         train_end = time_splits[i]
         valid_end = time_splits[i+1]
         train_df = dev_df[dev_df[DATE] < train_end]
-        valid_df = dev_df[dev_df[DATE].between(train_end, valid_end)]
+        valid_df = dev_df[dev_df[DATE].between(train_end, valid_end, inclusive='left')]
 
         logger.info('#######################################################')
         train_fold_name = f'Train Fold: {start_date.date()} - {train_end.date()}'
@@ -98,8 +102,8 @@ def main():
         logger.info(f"{valid_fold_name}\n{get_label_count(valid_df, LABEL, PATIENT)}\n")
 
         tokenizer, model = get_pretrained_model(model_name=model_name)
-        # NOTE: max_length: gpt2 = 512
-        tokenize_function = lambda examples: tokenizer(examples["text"], padding="max_length", truncation=True)
+        # NOTE: max_length: gpt2 = 1024, bert = 512, clinical-longformer=4096
+        tokenize_function = lambda x: tokenizer(x["text"], padding="max_length", truncation=True) # max_length=512
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
         
         train_data = prepare_dataset(train_df[TEXT], train_df[LABEL], tokenize_function)
@@ -111,6 +115,7 @@ def main():
             eval_dataset=valid_data,
             tokenizer=tokenizer,
             data_collator=data_collator,
+            callbacks=[early_stop_callback],
             **kwargs
         )
         train_result = trainer.train()
@@ -118,8 +123,8 @@ def main():
         scores[f'{train_fold_name}\n{valid_fold_name}'] = eval_scores
     scores = pd.DataFrame(scores).T
     logger.info(f'Cross validation evaluation scores:\n{scores.to_string()}')
-    scores.to_csv(f'{ROOT_DIR}/results/{model_name}_{LABEL}_tscv_evaluation_scores.csv')
-    scores = pd.read_csv(f'{ROOT_DIR}/results/{model_name}_{LABEL}_tscv_evaluation_scores.csv')
+    scores.to_csv(f'{ROOT_DIR}/results/{model_name}-{LABEL}/tscv_evaluation_scores.csv')
+    scores = pd.read_csv(f'{ROOT_DIR}/results/{model_name}-{LABEL}/tscv_evaluation_scores.csv')
     
     # Train the final model using the entire development set and evaluate on the test set
     # NOTE: why not incorporate the test set into the time-series cross validation? Seems pretty trivial.
@@ -128,7 +133,7 @@ def main():
     logger.info('Training final model using all labeled samples...')
     training_args.num_train_epochs = int(scores['epoch'].mean()) # prevent overfitting...
     tokenizer, model = get_pretrained_model(model_name=model_name)
-    tokenize_function = lambda examples: tokenizer(examples["text"], padding="max_length", truncation=True)
+    tokenize_function = lambda x: tokenizer(x["text"], padding="max_length", truncation=True)
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
     dev_data = prepare_dataset(dev_df[TEXT], dev_df[LABEL], tokenize_function)
     test_data = prepare_dataset(test_df[TEXT], test_df[LABEL], tokenize_function)
@@ -147,12 +152,12 @@ def main():
     logger.info(f"{test_set_name}\n{get_label_count(test_df, LABEL, PATIENT)}\n")
     scores = pd.DataFrame({test_set_name: eval_scores}).T
     logger.info(f'Final evaluation scores:\n{scores.to_string()}')
-    scores.to_csv(f'{ROOT_DIR}/results/{model_name}_{LABEL}_final_evaluation_scores.csv')
+    scores.to_csv(f'{ROOT_DIR}/results/{model_name}-{LABEL}/final_evaluation_scores.csv')
 
     # Use the final model to label the unlabeled data
     # model = AutoModelForSequenceClassification.from_pretrained(f'{ROOT_DIR}/models/fine-tuned-{model_name}')
     # tokenizer = AutoTokenizer.from_pretrained(f'{ROOT_DIR}/models/fine-tuned-{model_name}')
-    # tokenize_function = lambda examples: tokenizer(examples["text"], padding="max_length", truncation=True)
+    # tokenize_function = lambda x: tokenizer(x["text"], padding="max_length", truncation=True)
     # trainer = Trainer(model=model)
     N = len(df)
     dummy_labels = pd.Series(np.random.randint(2, size=N))
@@ -176,6 +181,7 @@ if __name__ == '__main__':
         --overwrite-file
 
     TODO: try without huggingface Trainer (normal PyTorch training, with DDP, model parallelization, etc)
-    TODO: try gptneo and bert
+    TODO: Consolidate all data into one excel sheet (time series results, final results, number of counts)
+    TODO: include 95% CI 
     """
     main()

@@ -1,4 +1,4 @@
-from typing import Callable, Sequence
+from typing import Callable
 import os
 
 from datasets import Dataset
@@ -8,7 +8,6 @@ from sklearn.metrics import (
 )
 from transformers import (
     AutoConfig, AutoTokenizer, AutoModelForSequenceClassification,
-    BertConfig, BertTokenizerFast, BertForSequenceClassification,
     GPT2Config, GPT2TokenizerFast, GPT2ForSequenceClassification,
 )
 import pandas as pd
@@ -28,7 +27,7 @@ def get_pretrained_model(model_name: str, freeze_encoder: bool = False):
 
     # Create tokenizer
     tokenizer = AutoTokenizer.from_pretrained(f'{model_path}/tokenizer')
-    tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token is None: tokenizer.pad_token = tokenizer.eos_token
 
     # Create model
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -74,7 +73,7 @@ def get_manually_labeled_data(
     df: pd.DataFrame, 
     label_col: str, 
     patient_col: str = 'mrn',
-    verbose: bool = True
+    verbose: bool = False
 ):
     mask = df[label_col].notnull()
     labeled_df = df[mask].copy()
@@ -102,8 +101,9 @@ def compute_metrics(eval_pred):
         "AUROC": roc_auc_score(label, pred_prob),
         "AUPRC": average_precision_score(label, pred_prob),
         "accuracy": accuracy_score(label, pred_bool),
-        "recall": recall_score(label, pred_bool, zero_division=0),
-        "PPV": precision_score(label, pred_bool, zero_division=0)
+        "sensitivity": recall_score(label, pred_bool, zero_division=0), # recall, true positive rate
+        "precision": precision_score(label, pred_bool, zero_division=0), # positive predictive value
+        'specificity': recall_score(label, pred_bool, pos_label=0, zero_division=0) # true negative rate
     }
     return result
 
