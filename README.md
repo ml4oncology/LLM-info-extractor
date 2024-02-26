@@ -7,6 +7,7 @@ Extract desired labels from unlabeled clinical text (e.g. radiology reports, cli
 torchrun scripts/labeler.py \
     --csv <path to csv file> \
     --config <path to config.yaml file> \
-    --model-name <name of pretrained large language model> \
+    --label-col <name of label column> \
+    --model <path to pretrained large language model> \
     [OPTIONAL args]
 ```
