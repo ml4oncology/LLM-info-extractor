@@ -1,28 +1,21 @@
-# timeseries split
-test_split_year: 2020
+# Temporal split
 dev_start_year: 2018
-interval: 6 # months
+test_start_year: 2019
+test_end_year: 2020
+cross_validation_interval: NULL # months
 
-# column names
-label_col: 'PE'
-patient_col: 'patientid'
-date_col: 'datetime'
-text_col: 'text'
-
-# model training arguments
+# Huggingface training arguments
 # Ref: https://huggingface.co/docs/transformers/en/main_classes/trainer#transformers.TrainingArguments
 training_args:
-  num_train_epochs: 50             # total # of training epochs
+  num_train_epochs: 20             # total # of training epochs
   per_device_train_batch_size: 8   # batch size per device during training
   per_device_eval_batch_size: 8    # batch size per device during evaluation
 
-  # save memory by using 8-bit Adam optimizer...didn't make much difference,
-  # tho maybe bitsandbytes wasn't built properly
+  # save memory by using 8-bit Adam optimizer...didn't make much difference, tho maybe bitsandbytes wasn't built properly
   # optim: adamw_bnb_8bit
   optim: adamw_torch
 
-  # save memory by imitating large batch sizes 
-  # (e.g. batch size x gradient accumulation step = effective batch size)
+  # save memory by imitating large batch sizes (e.g. batch size x gradient accumulation step = effective batch size)
   gradient_accumulation_steps: 2   # number of times to accumulate gradients before updating weights
 
   # save memory (at the expense of slower computation) by storing only select activations from forward 
@@ -44,4 +37,13 @@ training_args:
   evaluation_strategy: epoch       # evaluate at end of each epoch
   logging_strategy: epoch          # log at end of each epoch
   seed: 42
+
+# Training callback arguments
 early_stopping_patience: 5
+
+# PEFT arguments (i.e. LoraConfig arguments)
+# Ref: https://github.com/huggingface/peft
+peft_args:
+    scaling_factor: 16      # lora_alpha
+    dropout: 0.1            # lora_dropout
+    update_matrice_rank: 64 # r

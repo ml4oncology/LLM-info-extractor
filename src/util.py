@@ -2,69 +2,81 @@ from typing import Callable
 import os
 
 from datasets import Dataset
+from peft import LoraConfig
 from sklearn.metrics import (
     average_precision_score, roc_auc_score,
-    accuracy_score, recall_score, precision_score, f1_score
+    accuracy_score, recall_score, precision_score
 )
 from transformers import (
-    AutoConfig, AutoTokenizer, AutoModelForSequenceClassification,
-    GPT2Config, GPT2TokenizerFast, GPT2ForSequenceClassification,
+    AutoTokenizer, 
+    AutoModelForSequenceClassification,
+    BitsAndBytesConfig,
 )
 import pandas as pd
 import numpy as np
 import torch
 
-from . import ROOT_DIR, logger
+from . import logger
+
+###############################################################################
+# Load Configurations
+###############################################################################
+def get_quant_config():
+    """Get quantization configurations for QLoRA - Quantized Low-Rank Adaptation
+
+    Ref: https://github.com/artidoro/qlora
+    """
+    quant_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=False,
+    )
+    return quant_config
+
+def get_peft_config(
+    scaling_factor=16,
+    dropout=0.1,
+    update_matrice_rank=64,
+):
+    """Get PEFT (Parameter-Efficient Fine-Tuning) configurations
+    
+    Or more specifically, LoRA (Low-Rank Adaptation) configurations
+    """
+    peft_config = LoraConfig(
+        lora_alpha=scaling_factor,
+        lora_dropout=dropout,
+        r=update_matrice_rank,
+        bias="none",
+    )
+    return peft_config
 
 ###############################################################################
 # Load Model
 ###############################################################################
-def get_pretrained_model(model_name: str, freeze_encoder: bool = False):
+def get_pretrained_model(model_path: str, quantize: bool = False):
     """Load the pretrained tokenizer and model"""
-    model_path = f'{ROOT_DIR}/models/{model_name}'
-    if not os.path.exists(model_path):
-        download_pretrained_model(model_name, model_path)
-
-    # Create tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(f'{model_path}/tokenizer')
-    if tokenizer.pad_token is None: tokenizer.pad_token = tokenizer.eos_token
-
-    # Create model
-    model = AutoModelForSequenceClassification.from_pretrained(
-        f'{model_path}/model', 
-        problem_type='single_label_classification'
-    )
+    # Load model
+    kwargs = dict(problem_type='single_label_classification')
+    if quantize: kwargs['quantization_config'] = get_quant_config()
+    model = AutoModelForSequenceClassification.from_pretrained(model_path, **kwargs)
     model.config.pad_token_id = model.config.eos_token_id
-    logger.info(f'Number of parameters in {model_name.upper()}: {model.num_parameters():,}')
-    
-    if freeze_encoder:
-        # keep about half of the encoder frozen
-        for idx, (name, param) in enumerate(model.named_parameters()):
-            if idx % 2 == 0 and 'bias' not in name: 
-                param.requires_grad = False
+    logger.info(f'Number of parameters in {os.path.basename(model_path).upper()}: {model.num_parameters():,}')
 
     if torch.cuda.is_available():
         model = model.to('cuda')
 
+    # Load tokenizer
+    tokenizer = load_tokenizer(model_path)
+
     return tokenizer, model
 
-def download_pretrained_model(model_name: str, model_path: str):
-    """Download and save the pre-trained tokenizer and model"""
-    if model_name == 'gpt2':
-        Tokenizer = GPT2TokenizerFast
-        Config = GPT2Config
-        Model = GPT2ForSequenceClassification
-    else:
-        Tokenizer = AutoTokenizer
-        Config = AutoConfig
-        Model = AutoModelForSequenceClassification
-    
-    tokenizer = Tokenizer.from_pretrained(model_name)
-    tokenizer.save_pretrained(f'{model_path}/tokenizer')
 
-    model_config = Config.from_pretrained(model_name, num_labels=2) # binary classification
-    model = Model.from_pretrained(model_name, config=model_config)
-    model.save_pretrained(f'{model_path}/model')
+def load_tokenizer(model_path: str):
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    if tokenizer.padding_side is None: tokenizer.padding_side = "right"
+    if tokenizer.pad_token is None: tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
 
 ###############################################################################
 # Data Prep
