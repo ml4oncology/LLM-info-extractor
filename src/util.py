@@ -1,6 +1,8 @@
 from typing import Callable
 import os
 
+from accelerate import dispatch_model, infer_auto_device_map
+from accelerate.utils import get_balanced_memory
 from datasets import Dataset
 from peft import get_peft_model, prepare_model_for_kbit_training, LoraConfig, TaskType
 from peft.utils import TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
@@ -19,10 +21,15 @@ import torch
 
 from . import logger
 
-# set up LoRA target modules
-lora_target_modules = {
+# Names of the modules to apply the adapter to
+LORA_TARGET_MODULES = {
     'mistral7b': ['o_proj', 'q_proj', 'up_proj', 'down_proj', 'gate_proj', 'k_proj', 'v_proj'],
     **TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
+}
+
+# Names of the modules that should never be split across devices
+NO_SPLIT_MODULES = {
+    'mistral7b': ['MistralDecoderLayer']
 }
 
 ###############################################################################
@@ -53,7 +60,7 @@ def get_peft_config(
     """
     lora_config = LoraConfig(
         lora_alpha=scaling_factor,
-        target_modules=lora_target_modules[model_name],
+        target_modules=LORA_TARGET_MODULES[model_name],
         lora_dropout=dropout,
         r=update_matrice_rank,
         bias="none",
@@ -66,19 +73,26 @@ def get_peft_config(
 ###############################################################################
 def get_pretrained_model(cfg: dict):
     """Load the pretrained tokenizer and model"""
+    MODEL_NAME = cfg['model_name']
+
     # Load model
-    kwargs = dict(problem_type='single_label_classification', num_labels=2, device_map='cuda:0')
+    kwargs = dict(problem_type='single_label_classification', num_labels=2, device_map='auto')
     if cfg['lora_quantize']: kwargs['quantization_config'] = get_quant_config()
     model = AutoModelForSequenceClassification.from_pretrained(cfg['model'], **kwargs)
     model.config.pad_token_id = model.config.eos_token_id
     if cfg['lora_quantize']:
-        lora_config = get_peft_config(cfg['model_name'], **cfg['lora_args'])
+        lora_config = get_peft_config(MODEL_NAME, **cfg['lora_args'])
         model = prepare_model_for_kbit_training(model)
         model = get_peft_model(model, lora_config)
-    elif torch.cuda.is_available():
-        model = model.to('cuda')
+    
+    # Spread model across available GPUs, CPUs, disk
+    if cfg['balance']:
+        modules = NO_SPLIT_MODULES[MODEL_NAME]
+        max_memory = get_balanced_memory(model, no_split_module_classes=modules)
+        device_map = infer_auto_device_map(model, no_split_module_classes=modules, max_memory=max_memory)
+        model = dispatch_model(model, device_map=device_map)
 
-    logger.info(f"Number of parameters in {cfg['model_name']}: {model.num_parameters():,}")
+    logger.info(f"Number of parameters in {MODEL_NAME}: {model.num_parameters():,}")
 
     # Load tokenizer
     tokenizer = load_tokenizer(cfg['model'])

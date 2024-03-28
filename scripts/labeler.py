@@ -39,6 +39,8 @@ def parse_args():
     parser.add_argument('--model', type=str, default='gpt2', help=msg)
     msg = 'Quantize the model and fine-tune it via low-rank adaptation (LoRA)'
     parser.add_argument('--lora-quantize', action='store_true', help=msg)
+    msg = 'Spread the model across available GPUs, CPUs, and even disk'
+    parser.add_argument('--balance', action='store_true', help=msg)
 
     # Output params
     msg = 'Writes over the original csv to include a new column with the label predictions'
