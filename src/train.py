@@ -70,7 +70,7 @@ def get_trainer(train_df: pd.DataFrame, eval_df: pd.DataFrame, cfg: dict, **kwar
     )
 
     # Get the tokenizer, model, and prepped data
-    tokenizer, model = get_pretrained_model(model_path=cfg['model'], lora_quantize=cfg['lora_quantize'])
+    tokenizer, model = get_pretrained_model(cfg)
     # NOTE: max_length: gpt2 = 1024, bert = 512, clinical-longformer = 4096
     tokenize_function = lambda x: tokenizer(x["text"], padding=True, truncation=True, return_tensors='pt') # max_length=512
     train_data = prepare_dataset(train_df[TEXT], train_df[LABEL], tokenize_function)

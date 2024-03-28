@@ -3,6 +3,7 @@ import os
 
 from datasets import Dataset
 from peft import get_peft_model, prepare_model_for_kbit_training, LoraConfig, TaskType
+from peft.utils import TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
 from sklearn.metrics import (
     average_precision_score, roc_auc_score,
     accuracy_score, recall_score, precision_score
@@ -17,6 +18,12 @@ import numpy as np
 import torch
 
 from . import logger
+
+# set up LoRA target modules
+lora_target_modules = {
+    'mistral7b': ['o_proj', 'q_proj', 'up_proj', 'down_proj', 'gate_proj', 'k_proj', 'v_proj'],
+    **TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
+}
 
 ###############################################################################
 # Load Configurations
@@ -35,9 +42,10 @@ def get_quant_config():
     return quant_config
 
 def get_peft_config(
-    scaling_factor=16,
-    dropout=0.1,
-    update_matrice_rank=64,
+    model_name: str,
+    scaling_factor: int = 8,
+    dropout: float = 0.05,
+    update_matrice_rank: int = 16,
 ):
     """Get PEFT (Parameter-Efficient Fine-Tuning) configurations
     
@@ -45,6 +53,7 @@ def get_peft_config(
     """
     lora_config = LoraConfig(
         lora_alpha=scaling_factor,
+        target_modules=lora_target_modules[model_name],
         lora_dropout=dropout,
         r=update_matrice_rank,
         bias="none",
@@ -55,24 +64,24 @@ def get_peft_config(
 ###############################################################################
 # Load Model
 ###############################################################################
-def get_pretrained_model(model_path: str, lora_quantize: bool = False):
+def get_pretrained_model(cfg: dict):
     """Load the pretrained tokenizer and model"""
     # Load model
     kwargs = dict(problem_type='single_label_classification', num_labels=2, device_map='cuda:0')
-    if lora_quantize: kwargs['quantization_config'] = get_quant_config()
-    model = AutoModelForSequenceClassification.from_pretrained(model_path, **kwargs)
+    if cfg['lora_quantize']: kwargs['quantization_config'] = get_quant_config()
+    model = AutoModelForSequenceClassification.from_pretrained(cfg['model'], **kwargs)
     model.config.pad_token_id = model.config.eos_token_id
-    if lora_quantize:
-        lora_config = get_peft_config()
+    if cfg['lora_quantize']:
+        lora_config = get_peft_config(cfg['model_name'], **cfg['lora_args'])
         model = prepare_model_for_kbit_training(model)
         model = get_peft_model(model, lora_config)
     elif torch.cuda.is_available():
         model = model.to('cuda')
 
-    logger.info(f'Number of parameters in {os.path.basename(model_path).upper()}: {model.num_parameters():,}')
+    logger.info(f"Number of parameters in {cfg['model_name']}: {model.num_parameters():,}")
 
     # Load tokenizer
-    tokenizer = load_tokenizer(model_path)
+    tokenizer = load_tokenizer(cfg['model'])
 
     return tokenizer, model
 
