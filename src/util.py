@@ -2,7 +2,7 @@ from typing import Callable
 import os
 
 from datasets import Dataset
-from peft import LoraConfig
+from peft import get_peft_model, prepare_model_for_kbit_training, LoraConfig, TaskType
 from sklearn.metrics import (
     average_precision_score, roc_auc_score,
     accuracy_score, recall_score, precision_score
@@ -43,28 +43,33 @@ def get_peft_config(
     
     Or more specifically, LoRA (Low-Rank Adaptation) configurations
     """
-    peft_config = LoraConfig(
+    lora_config = LoraConfig(
         lora_alpha=scaling_factor,
         lora_dropout=dropout,
         r=update_matrice_rank,
         bias="none",
+        task_type=TaskType.SEQ_CLS
     )
-    return peft_config
+    return lora_config
 
 ###############################################################################
 # Load Model
 ###############################################################################
-def get_pretrained_model(model_path: str, quantize: bool = False):
+def get_pretrained_model(model_path: str, lora_quantize: bool = False):
     """Load the pretrained tokenizer and model"""
     # Load model
-    kwargs = dict(problem_type='single_label_classification')
-    if quantize: kwargs['quantization_config'] = get_quant_config()
+    kwargs = dict(problem_type='single_label_classification', num_labels=2, device_map='cuda:0')
+    if lora_quantize: kwargs['quantization_config'] = get_quant_config()
     model = AutoModelForSequenceClassification.from_pretrained(model_path, **kwargs)
     model.config.pad_token_id = model.config.eos_token_id
-    logger.info(f'Number of parameters in {os.path.basename(model_path).upper()}: {model.num_parameters():,}')
-
-    if torch.cuda.is_available():
+    if lora_quantize:
+        lora_config = get_peft_config()
+        model = prepare_model_for_kbit_training(model)
+        model = get_peft_model(model, lora_config)
+    elif torch.cuda.is_available():
         model = model.to('cuda')
+
+    logger.info(f'Number of parameters in {os.path.basename(model_path).upper()}: {model.num_parameters():,}')
 
     # Load tokenizer
     tokenizer = load_tokenizer(model_path)

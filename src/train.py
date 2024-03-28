@@ -4,14 +4,12 @@ from transformers import (
     Trainer, 
     TrainingArguments, 
 )
-from trl import SFTTrainer
 import pandas as pd
 
 from . import ROOT_DIR, logger
 from .util import (
     compute_metrics,
     get_label_count,
-    get_peft_config,
     get_pretrained_model,
     prepare_dataset,
 )
@@ -56,7 +54,7 @@ def time_series_cross_validate(df: pd.DataFrame, cfg: dict, **kwargs) -> pd.Data
     return scores
 
 
-def get_trainer(train_df: pd.DataFrame, eval_df: pd.DataFrame, cfg: dict, **kwargs) -> Trainer | SFTTrainer:
+def get_trainer(train_df: pd.DataFrame, eval_df: pd.DataFrame, cfg: dict, **kwargs) -> Trainer:
     """
     Args:
         **kwargs: keyword arguments fed into Trainer or SFTTrainer
@@ -72,27 +70,19 @@ def get_trainer(train_df: pd.DataFrame, eval_df: pd.DataFrame, cfg: dict, **kwar
     )
 
     # Get the tokenizer, model, and prepped data
-    tokenizer, model = get_pretrained_model(model_path=cfg['model'], quantize=cfg['quantize'])
+    tokenizer, model = get_pretrained_model(model_path=cfg['model'], lora_quantize=cfg['lora_quantize'])
     # NOTE: max_length: gpt2 = 1024, bert = 512, clinical-longformer = 4096
-    tokenize_function = lambda x: tokenizer(x["text"], padding="max_length", truncation=True) # max_length=512
+    tokenize_function = lambda x: tokenizer(x["text"], padding=True, truncation=True, return_tensors='pt') # max_length=512
     train_data = prepare_dataset(train_df[TEXT], train_df[LABEL], tokenize_function)
     eval_data = prepare_dataset(eval_df[TEXT], eval_df[LABEL], tokenize_function)
-        
-    if cfg['adapt']:
-        trainer = SFTTrainer
-        kwargs['dataset_batch_size'] = training_args.per_device_train_batch_size
-        kwargs['dataset_text_field'] = 'text'
-        kwargs['peft_config'] = get_peft_config(**cfg['peft_args'])
-    else:
-        trainer = Trainer
-        kwargs['data_collator'] = DataCollatorWithPadding(tokenizer=tokenizer)
     
-    return trainer(
+    return Trainer(
         args=training_args,
         model=model,
         train_dataset=train_data,
         eval_dataset=eval_data,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
+        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
         **kwargs
     )

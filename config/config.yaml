@@ -10,10 +10,11 @@ training_args:
   num_train_epochs: 20             # total # of training epochs
   per_device_train_batch_size: 8   # batch size per device during training
   per_device_eval_batch_size: 8    # batch size per device during evaluation
+  weight_decay: 0
 
-  # save memory by using 8-bit Adam optimizer...didn't make much difference, tho maybe bitsandbytes wasn't built properly
-  # optim: adamw_bnb_8bit
-  optim: adamw_torch
+  # save memory by using 8-bit Adam optimizer
+  optim: adamw_bnb_8bit
+  # optim: adamw_torch
 
   # save memory by imitating large batch sizes (e.g. batch size x gradient accumulation step = effective batch size)
   gradient_accumulation_steps: 2   # number of times to accumulate gradients before updating weights
@@ -28,6 +29,9 @@ training_args:
   # save memory by using deepspeed (ZeRO optimization)
   # Ref: https://huggingface.co/docs/transformers/main_classes/deepspeed
   # deepspeed: ./config/ds_config_zero3.json
+
+  # pinning memory speeds up data transfer from CPU to GPU, but it consumes memory. Set to true if memory is not an issue.  
+  dataloader_pin_memory: false
 
   load_best_model_at_end: true
   metric_for_best_model: AUROC
