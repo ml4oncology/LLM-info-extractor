@@ -28,7 +28,7 @@ lora_target_modules = {
 ###############################################################################
 # Load Configurations
 ###############################################################################
-def get_quant_config():
+def get_quant_config() -> BitsAndBytesConfig:
     """Get quantization configurations for QLoRA - Quantized Low-Rank Adaptation
 
     Ref: https://github.com/artidoro/qlora
@@ -46,7 +46,7 @@ def get_peft_config(
     scaling_factor: int = 8,
     dropout: float = 0.05,
     update_matrice_rank: int = 16,
-):
+) -> LoraConfig:
     """Get PEFT (Parameter-Efficient Fine-Tuning) configurations
     
     Or more specifically, LoRA (Low-Rank Adaptation) configurations
@@ -100,7 +100,7 @@ def get_manually_labeled_data(
     label_col: str, 
     patient_col: str = 'mrn',
     verbose: bool = False
-):
+) -> pd.DataFrame:
     mask = df[label_col].notnull()
     labeled_df = df[mask].copy()
     if verbose:
@@ -108,7 +108,7 @@ def get_manually_labeled_data(
         logger.info(f'\n{count}')
     return labeled_df
 
-def prepare_dataset(X: pd.Series, Y: pd.Series, tokenize_func: Callable):
+def prepare_dataset(X: pd.Series, Y: pd.Series, tokenize_func: Callable) -> Dataset:
     text, label = X, torch.LongTensor(Y.values)
     dataset = pd.DataFrame({'text': text, 'label': label})
     dataset = Dataset.from_pandas(dataset, preserve_index=False)
@@ -118,7 +118,7 @@ def prepare_dataset(X: pd.Series, Y: pd.Series, tokenize_func: Callable):
 ###############################################################################
 # Evaluation
 ###############################################################################
-def compute_metrics(eval_pred):
+def compute_metrics(eval_pred) -> dict[str, float]:
     logits, label = eval_pred
     pred_bool = np.argmax(logits, axis=-1)
     # NOTE: torch.sigmoid cannot support fp16, minimum is fp32
@@ -136,7 +136,7 @@ def compute_metrics(eval_pred):
 ###############################################################################
 # Logging
 ###############################################################################
-def get_label_count(df: pd.DataFrame, label_col: str, patient_col: str):
+def get_label_count(df: pd.DataFrame, label_col: str, patient_col: str) -> pd.DataFrame:
     count = pd.concat([
         df[label_col].value_counts(),
         df.groupby(label_col).apply(lambda g: g[patient_col].nunique())
