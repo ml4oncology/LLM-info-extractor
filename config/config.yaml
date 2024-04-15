@@ -8,15 +8,16 @@ cross_validation_interval: NULL # months
 # Ref: https://huggingface.co/docs/transformers/en/main_classes/trainer#transformers.TrainingArguments
 training_args:
   num_train_epochs: 20             # total # of training epochs
-  per_device_train_batch_size: 8   # batch size per device during training
-  per_device_eval_batch_size: 8    # batch size per device during evaluation
+  per_device_train_batch_size: 4   # batch size per device during training
+  per_device_eval_batch_size: 4    # batch size per device during evaluation
+  weight_decay: 0
 
-  # save memory by using 8-bit Adam optimizer...didn't make much difference, tho maybe bitsandbytes wasn't built properly
+  # save memory by using 8-bit Adam optimizer
   # optim: adamw_bnb_8bit
   optim: adamw_torch
 
   # save memory by imitating large batch sizes (e.g. batch size x gradient accumulation step = effective batch size)
-  gradient_accumulation_steps: 2   # number of times to accumulate gradients before updating weights
+  gradient_accumulation_steps: 4   # number of times to accumulate gradients before updating weights
 
   # save memory (at the expense of slower computation) by storing only select activations from forward 
   # pass and recompute the unstored activations during backward pass
@@ -28,6 +29,9 @@ training_args:
   # save memory by using deepspeed (ZeRO optimization)
   # Ref: https://huggingface.co/docs/transformers/main_classes/deepspeed
   # deepspeed: ./config/ds_config_zero3.json
+
+  # pinning memory speeds up data transfer from CPU to GPU, but it consumes memory. Set to true if memory is not an issue.  
+  dataloader_pin_memory: false
 
   load_best_model_at_end: true
   metric_for_best_model: AUROC
@@ -41,9 +45,9 @@ training_args:
 # Training callback arguments
 early_stopping_patience: 5
 
-# PEFT arguments (i.e. LoraConfig arguments)
+# LoraConfig arguments
 # Ref: https://github.com/huggingface/peft
-peft_args:
-    scaling_factor: 16      # lora_alpha
-    dropout: 0.1            # lora_dropout
-    update_matrice_rank: 64 # r
+lora_args:
+    scaling_factor: 8       # lora_alpha
+    dropout: 0.05           # lora_dropout
+    update_matrice_rank: 16 # r

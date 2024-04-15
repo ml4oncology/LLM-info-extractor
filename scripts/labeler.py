@@ -37,9 +37,10 @@ def parse_args():
     # Model params
     msg = 'Path to the pre-trained large language model to fine-tune. Must be supported by Huggingface'
     parser.add_argument('--model', type=str, default='gpt2', help=msg)
-    parser.add_argument('--quantize', action='store_true', help='Use BitsAndBytes quantization')
-    msg = 'Fine-tune small number of extra parameters instead of all model parameters via low-rank adaptation (LoRA)'
-    parser.add_argument('--adapt', action='store_true', help=msg)
+    msg = 'Quantize the model and fine-tune it via low-rank adaptation (LoRA)'
+    parser.add_argument('--lora-quantize', action='store_true', help=msg)
+    msg = 'Spread the model across available GPUs, CPUs, and even disk'
+    parser.add_argument('--balance', action='store_true', help=msg)
 
     # Output params
     msg = 'Writes over the original csv to include a new column with the label predictions'
@@ -89,7 +90,7 @@ def main():
     N = len(full_dataset)
     dummy_labels = pd.Series(np.random.randint(2, size=N))
     tokenizer = load_tokenizer(cfg['model'])
-    tokenize_function = lambda x: tokenizer(x["text"], padding="max_length", truncation=True)
+    tokenize_function = lambda x: tokenizer(x["text"], padding=True, truncation=True, return_tensors='pt')
     data = prepare_dataset(full_dataset[TEXT], dummy_labels, tokenize_function)
     predictions, label_ids, metrics = trainer.predict(data)
     predicted_labels = np.argmax(predictions, axis=1)
