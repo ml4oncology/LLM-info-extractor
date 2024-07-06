@@ -1,5 +1,4 @@
 from typing import Callable
-import os
 
 from accelerate import dispatch_model, infer_auto_device_map
 from accelerate.utils import get_balanced_memory
@@ -76,7 +75,8 @@ def get_pretrained_model(cfg: dict):
     MODEL_NAME = cfg['model_name']
 
     # Load model
-    kwargs = dict(problem_type='single_label_classification', num_labels=2, device_map='auto')
+    device_map = 'auto' if cfg['balance'] else None
+    kwargs = dict(problem_type='single_label_classification', device_map=device_map)
     if cfg['lora_quantize']: kwargs['quantization_config'] = get_quant_config()
     model = AutoModelForSequenceClassification.from_pretrained(cfg['model'], **kwargs)
     model.config.pad_token_id = model.config.eos_token_id
@@ -117,26 +117,48 @@ def get_manually_labeled_data(
 ) -> pd.DataFrame:
     mask = df[label_col].notnull()
     labeled_df = df[mask].copy()
+
+    # convert label to binary
+    assert labeled_df[label_col].nunique() == 2
+    labeled_df[label_col] = labeled_df[label_col].astype(bool)
+
     if verbose:
         count = get_label_count(labeled_df, label_col, patient_col)
         logger.info(f'\n{count}')
+
     return labeled_df
 
-def prepare_dataset(X: pd.Series, Y: pd.Series, tokenize_func: Callable) -> Dataset:
+
+def prepare_dataset(X: pd.Series, Y: pd.Series, tokenizer: AutoTokenizer) -> Dataset:
     text, label = X, torch.LongTensor(Y.values)
     dataset = pd.DataFrame({'text': text, 'label': label})
     dataset = Dataset.from_pandas(dataset, preserve_index=False)
-    dataset = dataset.map(tokenize_func, batched=True)
+    # NOTE: max_length: gpt2 = 1024, bert = 512, clinical-longformer = 4096
+    tokenize = lambda x: tokenizer(x["text"], padding=True, truncation=True, return_tensors='pt') # max_length=512
+    dataset = dataset.map(tokenize, batched=True)
     return dataset
 
 ###############################################################################
 # Evaluation
 ###############################################################################
+def get_predictions(logits):
+    """Get both the predicted classes and the prediction probabilities
+    
+    Uses softmax to convert logits into probabilties
+    Take the maximum logits to get the predicted class
+    """
+    pred_bool = np.argmax(logits, axis=-1)
+
+    # NOTE: For Huggingface single_label_classification problem type, number of labels is always 2
+    # That makes it a multiclass classification task even though it's supposed to be a binary classification task
+    # Therefore, we use Softmax instead of Sigmoid to get the probability
+    pred_prob = torch.softmax(torch.from_numpy(logits), dim=-1)[:, 1]
+
+    return pred_bool, pred_prob
+
 def compute_metrics(eval_pred) -> dict[str, float]:
     logits, label = eval_pred
-    pred_bool = np.argmax(logits, axis=-1)
-    # NOTE: torch.sigmoid cannot support fp16, minimum is fp32
-    pred_prob = torch.sigmoid(torch.from_numpy(logits[:, 1]).to(dtype=torch.float32))
+    pred_bool, pred_prob = get_predictions(logits)
     result = {
         "AUROC": roc_auc_score(label, pred_prob),
         "AUPRC": average_precision_score(label, pred_prob),

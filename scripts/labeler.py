@@ -1,6 +1,7 @@
 import argparse
-from pathlib import Path
+import os
 import sys
+from pathlib import Path
 ROOT_DIR = Path(__file__).parent.parent.as_posix()
 sys.path.append(ROOT_DIR)
 
@@ -11,7 +12,13 @@ import yaml
 
 from src import logger
 from src.train import get_trainer, time_series_cross_validate
-from src.util import get_manually_labeled_data, prepare_dataset, get_label_count, load_tokenizer
+from src.util import (
+    get_manually_labeled_data, 
+    get_label_count, 
+    get_predictions, 
+    load_tokenizer,
+    prepare_dataset, 
+)
 
 import logging
 import warnings
@@ -41,10 +48,12 @@ def parse_args():
     parser.add_argument('--lora-quantize', action='store_true', help=msg)
     msg = 'Spread the model across available GPUs, CPUs, and even disk'
     parser.add_argument('--balance', action='store_true', help=msg)
+    parser.add_argument('--resume-training', action='store_true', help='Resume training from a checkpoint')
 
     # Output params
     msg = 'Writes over the original csv to include a new column with the label predictions'
     parser.add_argument('--overwrite-file', action='store_true', help=msg)
+    parser.add_argument('--output-path', type=str)
 
     args = parser.parse_args()
     return vars(args)
@@ -63,6 +72,13 @@ def main():
         cfg.update(yaml.safe_load(file))
     full_dataset = pd.read_csv(csv_path, parse_dates=[DATE])
     labeled_dataset = get_manually_labeled_data(full_dataset, label_col=LABEL, patient_col=PATIENT, verbose=True)
+    
+    def show_note_size(x):
+        return pd.concat([
+            x.str.len().describe(),
+            x.str.split().str.len().describe(),
+        ], keys=['length of text', 'number of words'], axis=1)
+    print(show_note_size(labeled_dataset[TEXT]))
 
     # Split the data into development and testing set
     year = labeled_dataset[DATE].dt.year
@@ -76,8 +92,11 @@ def main():
 
     # Train the model using the entire development set
     trainer = get_trainer(dev_df, test_df, cfg)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=cfg['resume_training'])
     trainer.save_model(f'{ROOT_DIR}/models/fine-tuned-{MODEL_NAME}-{LABEL}')
+    # save the log history
+    log_hist = pd.DataFrame(trainer.state.log_history)
+    log_hist.to_csv(f'{ROOT_DIR}/results/{MODEL_NAME}-{LABEL}/log_history.csv')
     # Evaluate on the test set
     eval_scores = trainer.evaluate()
     test_set_name = f'Test Set: {test_df[DATE].min().date()} - {test_df[DATE].max().date()}'
@@ -90,22 +109,26 @@ def main():
     N = len(full_dataset)
     dummy_labels = pd.Series(np.random.randint(2, size=N))
     tokenizer = load_tokenizer(cfg['model'])
-    tokenize_function = lambda x: tokenizer(x["text"], padding=True, truncation=True, return_tensors='pt')
-    data = prepare_dataset(full_dataset[TEXT], dummy_labels, tokenize_function)
-    predictions, label_ids, metrics = trainer.predict(data)
-    predicted_labels = np.argmax(predictions, axis=1)
-    full_dataset[f'predicted_{LABEL}'] = predicted_labels
-    if not cfg['overwrite_file']:
-        csv_name = csv_path.split('/')[-1]
-        csv_path = csv_path.replace(csv_name, f'{MODEL_NAME}-{csv_name}')
-    full_dataset.to_csv(csv_path, index=False)
+    data = prepare_dataset(full_dataset[TEXT], dummy_labels, tokenizer)
+    logits, label_ids, metrics = trainer.predict(data)
+    pred_bool, pred_prob = get_predictions(logits)
+    if cfg['overwrite_file']:
+        output_path = csv_path
+        output = full_dataset
+    else:
+        output_path = cfg.get('output_path', csv_path.replace('.csv', '_labels.csv'))
+        output = pd.read_csv('output_path') if os.path.exists(output_path) else full_dataset[[PATIENT, DATE]]
+    output[f'{MODEL_NAME}_pred_{LABEL}'] = pred_bool
+    output[f'{MODEL_NAME}_pred_prob_{LABEL}'] = pred_prob
+    output.to_csv(output_path, index=False)
+
     
 if __name__ == '__main__':
     """
     How to run the script example:
 
-    > torchrun scripts/labeler.py \
-        --csv ./data/LabeledVTE-Doppler.csv \
+    > python scripts/labeler.py \
+        --csv ./data/DVT.csv \
         --config ./config/config.yaml \
         --label-col DVT
         --model ./models/gpt2

@@ -71,10 +71,8 @@ def get_trainer(train_df: pd.DataFrame, eval_df: pd.DataFrame, cfg: dict, **kwar
 
     # Get the tokenizer, model, and prepped data
     tokenizer, model = get_pretrained_model(cfg)
-    # NOTE: max_length: gpt2 = 1024, bert = 512, clinical-longformer = 4096
-    tokenize_function = lambda x: tokenizer(x["text"], padding=True, truncation=True, return_tensors='pt') # max_length=512
-    train_data = prepare_dataset(train_df[TEXT], train_df[LABEL], tokenize_function)
-    eval_data = prepare_dataset(eval_df[TEXT], eval_df[LABEL], tokenize_function)
+    train_data = prepare_dataset(train_df[TEXT], train_df[LABEL], tokenizer)
+    eval_data = prepare_dataset(eval_df[TEXT], eval_df[LABEL], tokenizer)
     
     return Trainer(
         args=training_args,
