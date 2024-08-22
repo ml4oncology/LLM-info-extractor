@@ -2,8 +2,9 @@
 **/__pycache__
 **/._*
 .DS_store
+.huggingface
 data/
 results/
 models/
-notebooks/archive
-notebooks/external-examples
+notebooks
+copy-paste.txt
