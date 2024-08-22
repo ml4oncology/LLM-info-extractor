@@ -1,4 +1,4 @@
-# Large Language Model Extractor
+# Large Language Model Information Extractor
 
 Extract user-specified features/labels from clinical text (e.g. radiology reports, clinical notes, etc) by either 
 1. fine-tuning pretrained large language models on subset of manually labeled data
