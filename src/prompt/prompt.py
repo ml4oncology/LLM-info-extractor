@@ -3,15 +3,19 @@
 NOTE: Currently only supports Mistral-7B-Instruct. Will support other models like Llama3-8B-Instruct soon.
 """
 import argparse
+import os
 from pathlib import Path
 
 import json
+import numpy as np
 import pandas as pd
+import submitit
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 
+from ml_common.util import save_pickle
 
 quant_config_4bit = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -33,6 +37,14 @@ class PromptDataset(Dataset):
         return self.tokenizer.apply_chat_template(self.prompts[i], tokenize=False)
 
 
+def load_data(data_path: str) -> pd.DataFrame:
+    if data_path.endswith('.parquet') or data_path.endswith('.parquet.gzip'):
+        df = pd.read_parquet(data_path)
+    if data_path.endswith('.csv'):
+        df = pd.read_csv(data_path)
+    return df
+
+
 def construct_prompt(system_instructions: str, clinical_text: str):
     return [{"role": "user", "content": f"{system_instructions}\n{clinical_text}"}]
 
@@ -40,19 +52,16 @@ def construct_prompt(system_instructions: str, clinical_text: str):
 def main(cfg: dict):
     # process the config arguments
     data_path = cfg['data_path'] # './data/reports.parquet.gzip'
+    filename = Path(data_path).name
     text_col = cfg['text_col'] # 'processed_text'
     model_path = cfg['model_path'] # '/cluster/projects/gliugroup/2BLAST/HuggingFace_LLMs/Mistral-7B-Instruct-v0.3'
     prompt_path = cfg['prompt_path']
     save_path = cfg['save_path'] # './data/prompted_reports.parquet.gzip'
     if save_path is None:
-        filename = Path(data_path).name
         save_path = data_path.replace(filename, f'prompted_{filename}')
     
     # load data
-    if data_path.endswith('.parquet') or data_path.endswith('.parquet.gzip'):
-        df = pd.read_parquet(data_path)
-    if data_path.endswith('.csv'):
-        df = pd.read_csv(data_path)
+    df = load_data(data_path)
 
     # load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
@@ -80,13 +89,19 @@ def main(cfg: dict):
     # generate text
     results = []
     kwargs = dict(max_new_tokens=200, return_full_text=False, batch_size=1, pad_token_id=tokenizer.eos_token_id)
-    for seq in tqdm(pipe(dataset, **kwargs)):
+    for i, seq in tqdm(enumerate(pipe(dataset, **kwargs))):
         generated_text = seq[0]['generated_text']
         try:
             result = json.loads(generated_text)
         except json.JSONDecodeError:
             result = {'failed_output': generated_text}
         results.append(result)
+
+        # save checkpoints at every 100th data point
+        # TODO: support continuing from saved checkpoint
+        if i % 100 == 0:
+            save_pickle(results, '/tmp', f'checkpoint_{filename}')
+
     results = pd.DataFrame(results)
 
     # save the results
@@ -99,8 +114,47 @@ def main(cfg: dict):
         df.to_csv(save_path, index=False)
 
 
-def launch():
-    pass
+def launch(cfg):
+    """Use submitit to launch jobs in the SLURM cluster
+
+    References: 
+    - https://www.unitary.ai/articles/intro-to-multi-node-machine-learning-2-using-slurm
+    - https://github.com/facebookincubator/submitit/blob/main/docs/examples.md
+    """
+    # Initialize the executor, which is the submission interface
+    executor = submitit.AutoExecutor(folder="logs/")
+
+    # Specify the Slurm parameters
+    # TODO: put this in another config file
+    executor.update_parameters(  
+        # slurm_account="gliugroup",      
+        slurm_partition="gpu",
+        slurm_array_parallelism=4, # Limit job concurrency to 4 jobs at a time
+        nodes=1, # Each job in the job array gets one node
+        timeout_min=10 * 60, # Limit the job running time to 10 hours
+        slurm_gpus_per_node=1, # Each node should use 1 GPU
+        slurm_additional_parameters={
+            "account": "gliugroup",
+        }
+    )
+
+    # Split the data into n partitions
+    n_partitions = 4
+    data_path = Path(cfg.pop('data_path'))
+    data_dir, filename = data_path.parent, data_path.name
+    os.makedirs(f'{data_dir}/data_partitions/')
+    df = load_data(str(data_path))
+    cfgs = []
+    for partition_id, idxs in enumerate(np.array_split(df.index, n_partitions)):
+        partition_path = f'{data_dir}/data_partitions/{partition_id}_{filename}'
+        df.loc[idxs].to_csv(partition_path, index_label='index')
+        cfgs.append(dict(data_path=partition_path, **cfg))
+
+    # Submit your function and inputs as a job array
+    jobs = executor.map_array(main, cfgs)
+
+    # Monitor jobs to keep track of completed jobs
+    submitit.helpers.monitor_jobs(jobs)
 
 
 if __name__ == '__main__':
@@ -111,5 +165,6 @@ if __name__ == '__main__':
     parser.add_argument('--model-path', type=str, required=True, help='Path to the pre-trained large language model')
     parser.add_argument('--save-path', type=str, help='Where to save the results')
     cfg = vars(parser.parse_args())
-    main(cfg)
+    # main(cfg)
+    launch(cfg)
     
