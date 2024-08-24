@@ -6,6 +6,7 @@ import argparse
 import os
 from pathlib import Path
 
+from datetime import datetime
 import json
 import numpy as np
 import pandas as pd
@@ -130,7 +131,7 @@ def launch(cfg):
     - https://github.com/facebookincubator/submitit/blob/main/docs/examples.md
     """
     # Initialize the executor, which is the submission interface
-    executor = submitit.AutoExecutor(folder="logs/")
+    executor = submitit.AutoExecutor(folder=f"logs/{datetime.now().replace(microsecond=0)}")
 
     # Specify the Slurm parameters
     # TODO: put this in another config file
