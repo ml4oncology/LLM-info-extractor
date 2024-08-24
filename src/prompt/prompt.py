@@ -42,7 +42,20 @@ def load_data(data_path: str) -> pd.DataFrame:
         df = pd.read_parquet(data_path)
     if data_path.endswith('.csv'):
         df = pd.read_csv(data_path)
+    if data_path.endswith('.xlsx'):
+        df = pd.read_excel(data_path)
     return df
+
+
+def save_data(df: pd.DataFrame, save_path: str):
+    if save_path.endswith('.parquet'):
+        df.to_parquet(save_path, index=False)
+    elif save_path.endswith('.parquet.gzip'):
+        df.to_parquet(save_path, compression='gzip', index=False)
+    elif save_path.endswith('.csv'):
+        df.to_csv(save_path, index=False)
+    elif save_path.endswith('.xlsx'):
+        df.to_excel(save_path, index=False)
 
 
 def construct_prompt(system_instructions: str, clinical_text: str):
@@ -106,12 +119,7 @@ def main(cfg: dict):
 
     # save the results
     df = pd.concat([df, results], axis=1)
-    if save_path.endswith('.parquet'):
-        df.to_parquet(save_path, index=False)
-    elif save_path.endswith('.parquet.gzip'):
-        df.to_parquet(save_path, compression='gzip', index=False)
-    elif save_path.endswith('.csv'):
-        df.to_csv(save_path, index=False)
+    save_data(df, save_path)
 
 
 def launch(cfg):
@@ -131,10 +139,11 @@ def launch(cfg):
         slurm_partition="gpu",
         slurm_array_parallelism=4, # Limit job concurrency to 4 jobs at a time
         nodes=1, # Each job in the job array gets one node
-        timeout_min=10 * 60, # Limit the job running time to 10 hours
+        mem_gb=4, # Each job gets 4GB of memory
+        timeout_min=24 * 60, # Limit the job running time to 24 hours
         slurm_gpus_per_node=1, # Each node should use 1 GPU
         slurm_additional_parameters={
-            "account": "gliugroup",
+            "account": "gliugroup_gpu",
         }
     )
 
@@ -142,7 +151,7 @@ def launch(cfg):
     n_partitions = 4
     data_path = Path(cfg.pop('data_path'))
     data_dir, filename = data_path.parent, data_path.name
-    os.makedirs(f'{data_dir}/data_partitions/')
+    os.makedirs(f'{data_dir}/data_partitions/', exist_ok=True)
     df = load_data(str(data_path))
     cfgs = []
     for partition_id, idxs in enumerate(np.array_split(df.index, n_partitions)):
