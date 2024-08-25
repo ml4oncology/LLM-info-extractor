@@ -48,15 +48,15 @@ def load_data(data_path: str) -> pd.DataFrame:
     return df
 
 
-def save_data(df: pd.DataFrame, save_path: str):
+def save_data(df: pd.DataFrame, save_path: str, **kwargs):
     if save_path.endswith('.parquet'):
-        df.to_parquet(save_path, index=False)
+        df.to_parquet(save_path, **kwargs)
     elif save_path.endswith('.parquet.gzip'):
-        df.to_parquet(save_path, compression='gzip', index=False)
+        df.to_parquet(save_path, compression='gzip', **kwargs)
     elif save_path.endswith('.csv'):
-        df.to_csv(save_path, index=False)
+        df.to_csv(save_path, **kwargs)
     elif save_path.endswith('.xlsx'):
-        df.to_excel(save_path, index=False)
+        df.to_excel(save_path, **kwargs)
 
 
 def construct_prompt(system_instructions: str, clinical_text: str):
@@ -120,7 +120,7 @@ def main(cfg: dict):
 
     # save the results
     df = pd.concat([df, results], axis=1)
-    save_data(df, save_path)
+    save_data(df, save_path, index=False)
 
 
 def launch(cfg):
@@ -141,7 +141,7 @@ def launch(cfg):
         slurm_array_parallelism=4, # Limit job concurrency to 4 jobs at a time
         nodes=1, # Each job in the job array gets one node
         mem_gb=4, # Each job gets 4GB of memory
-        timeout_min=24 * 60, # Limit the job running time to 24 hours
+        timeout_min=48 * 60, # Limit the job running time to 2 days
         slurm_gpus_per_node=1, # Each node should use 1 GPU
         slurm_additional_parameters={
             "account": "gliugroup_gpu",
@@ -157,7 +157,7 @@ def launch(cfg):
     cfgs = []
     for partition_id, idxs in enumerate(np.array_split(df.index, n_partitions)):
         partition_path = f'{data_dir}/data_partitions/{partition_id}_{filename}'
-        df.loc[idxs].to_csv(partition_path, index_label='index')
+        save_data(df.loc[idxs], partition_path, index_label='index')
         cfgs.append(dict(data_path=partition_path, **cfg))
 
     # Submit your function and inputs as a job array
