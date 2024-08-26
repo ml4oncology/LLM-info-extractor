@@ -1,13 +1,5 @@
-# Large Language Model Label Extractor
+# Large Language Model Information Extractor
 
-Extract desired labels from unlabeled clinical text (e.g. radiology reports, clinical notes, etc) by fine-tuning pretrained large language models on subset of manually labeled data.
-
-# Instructions
-```bash
-torchrun scripts/labeler.py \
-    --csv <path to csv file> \
-    --config <path to config.yaml file> \
-    --label-col <name of label column> \
-    --model <path to pretrained large language model> \
-    [OPTIONAL args]
-```
+Extract user-specified features/labels from clinical text (e.g. radiology reports, clinical notes, etc) by either 
+1. fine-tuning pretrained large language models on subset of manually labeled data
+2. prompting pretrained large language models, providing zero-shot or few-shot examples from manually labeled data

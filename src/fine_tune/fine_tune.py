@@ -1,18 +1,16 @@
 import argparse
+import logging
 import os
-import sys
+import warnings
 from pathlib import Path
-ROOT_DIR = Path(__file__).parent.parent.as_posix()
-sys.path.append(ROOT_DIR)
 
 import datetime
 import pandas as pd
 import numpy as np
 import yaml
 
-from src import logger
-from src.train import get_trainer, time_series_cross_validate
-from src.util import (
+from .train import get_trainer, time_series_cross_validate
+from .util import (
     get_manually_labeled_data, 
     get_label_count, 
     get_predictions, 
@@ -20,14 +18,21 @@ from src.util import (
     prepare_dataset, 
 )
 
-import logging
-import warnings
 # User warning occurs for multi-GPU by torch
 warnings.filterwarnings("ignore", message="Was asked to gather along dimension 0, but all input tensors were scalars")
 # User warning occurs when using deepspeed
 warnings.filterwarnings("ignore", message="UserWarning: Positional args are being deprecated, use kwargs instead.")
+
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s %(levelname)s:%(message)s', 
+    datefmt='%m/%d/%Y %I:%M:%S',
+)
+logger = logging.getLogger(__name__)
 # logger.addHandler(logging.StreamHandler(sys.stdout))
+ROOT_DIR = Path(__file__).parent.parent.as_posix()
 logger.addHandler(logging.FileHandler(f'{ROOT_DIR}/results/logs/{datetime.datetime.now()}.log', mode='w'))
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
