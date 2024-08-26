@@ -150,6 +150,7 @@ def launch(cfg):
 
     # Split the data into n partitions
     n_partitions = 4
+    cfg['save_path'] = None # temporary hotfix
     data_path = Path(cfg.pop('data_path'))
     data_dir, filename = data_path.parent, data_path.name
     os.makedirs(f'{data_dir}/data_partitions/', exist_ok=True)
