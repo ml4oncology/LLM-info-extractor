@@ -66,7 +66,7 @@ def construct_prompt(system_instructions: str, clinical_text: str):
 def main(cfg: dict):
     # process the config arguments
     data_path = cfg['data_path'] # './data/reports.parquet.gzip'
-    filename = Path(data_path).name
+    data_dir, filename = Path(data_path).parent, Path(data_path).name
     text_col = cfg['text_col'] # 'processed_text'
     model_path = cfg['model_path'] # '/cluster/projects/gliugroup/2BLAST/HuggingFace_LLMs/Mistral-7B-Instruct-v0.3'
     prompt_path = cfg['prompt_path']
@@ -114,7 +114,7 @@ def main(cfg: dict):
         # save checkpoints at every 100th data point
         # TODO: support continuing from saved checkpoint
         if i % 100 == 0:
-            save_pickle(results, '/tmp', f'checkpoint_{filename}')
+            save_pickle(results, data_dir, f'checkpoint_{filename}')
 
     results = pd.DataFrame(results)
 
@@ -136,7 +136,7 @@ def launch(cfg):
     # Specify the Slurm parameters
     # TODO: put this in another config file
     executor.update_parameters(  
-        # slurm_account="gliugroup",      
+        # slurm_account="gliugroup_gpu",      
         slurm_partition="gpu",
         slurm_array_parallelism=4, # Limit job concurrency to 4 jobs at a time
         nodes=1, # Each job in the job array gets one node
