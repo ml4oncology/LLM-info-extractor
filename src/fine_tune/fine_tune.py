@@ -134,7 +134,7 @@ if __name__ == '__main__':
 
     > python scripts/labeler.py \
         --csv ./data/DVT.csv \
-        --config ./config/config.yaml \
+        --config ./config/fine_tune_config.yaml \
         --label-col DVT
         --model ./models/gpt2
         --overwrite-file

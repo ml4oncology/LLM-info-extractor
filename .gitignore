@@ -1,6 +1,7 @@
 **/.ipynb_checkpoints
 **/__pycache__
 **/._*
+*.egg-info
 .DS_store
 .huggingface
 data/
@@ -8,4 +9,5 @@ results/
 models/
 notes/
 notebooks/
+logs/
 copy-paste.txt
