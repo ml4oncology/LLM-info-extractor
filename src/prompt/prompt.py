@@ -17,7 +17,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 
 from llm_info_extractor.util import load_data, save_data
-from ml_common.util import save_pickle
+from ml_common.util import load_pickle, save_pickle
 
 quant_config_4bit = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -45,12 +45,12 @@ def construct_prompt(system_instructions: str, clinical_text: str):
 
 def main(cfg: dict):
     # process the config arguments
-    data_path = cfg['data_path'] # './data/reports.parquet.gzip'
+    data_path = cfg['data_path']
     data_dir, filename = Path(data_path).parent, Path(data_path).name
-    text_col = cfg['text_col'] # 'processed_text'
-    model_path = cfg['model_path'] # '/cluster/projects/gliugroup/2BLAST/HuggingFace_LLMs/Mistral-7B-Instruct-v0.3'
+    text_col = cfg['text_col']
+    model_path = cfg['model_path']
     prompt_path = cfg['prompt_path']
-    save_path = cfg['save_path'] # './data/prompted_reports.parquet.gzip'
+    save_path = cfg['save_path']
     if save_path is None:
         save_path = data_path.replace(filename, f'prompted_{filename}')
     
@@ -80,8 +80,14 @@ def main(cfg: dict):
     prompts = [construct_prompt(system_instructions, clinical_text) for clinical_text in df[text_col]]
     dataset = PromptDataset(prompts, tokenizer)
 
+    # resume from checkpoint if exists
+    if os.path.exists(f'{data_dir}/checkpoint_{filename}.pkl'):
+        results = load_pickle(data_dir, f'checkpoint_{filename}')
+        dataset = dataset[len(results):]
+    else:
+        results = []
+
     # generate text
-    results = []
     kwargs = dict(max_new_tokens=200, return_full_text=False, batch_size=1, pad_token_id=tokenizer.eos_token_id)
     for i, seq in tqdm(enumerate(pipe(dataset, **kwargs))):
         generated_text = seq[0]['generated_text']
@@ -92,7 +98,6 @@ def main(cfg: dict):
         results.append(result)
 
         # save checkpoints at every 100th data point
-        # TODO: support continuing from saved checkpoint
         if i % 100 == 0:
             save_pickle(results, data_dir, f'checkpoint_{filename}')
 
