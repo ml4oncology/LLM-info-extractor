@@ -16,8 +16,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 
-from llm_info_extractor.util import load_data, save_data
-from ml_common.util import load_pickle, save_pickle
+from ml_common.util import load_pickle, load_table, save_pickle, save_table
 
 quant_config_4bit = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -55,7 +54,7 @@ def main(cfg: dict):
         save_path = data_path.replace(filename, f'prompted_{filename}')
     
     # load data
-    df = load_data(data_path)
+    df = load_table(data_path)
 
     # load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
@@ -105,7 +104,7 @@ def main(cfg: dict):
 
     # save the results
     df = pd.concat([df, results], axis=1)
-    save_data(df, save_path, index=False)
+    save_table(df, save_path, index=False)
 
 
 def launch(cfg):
@@ -139,11 +138,11 @@ def launch(cfg):
     data_path = Path(cfg.pop('data_path'))
     data_dir, filename = data_path.parent, data_path.name
     os.makedirs(f'{data_dir}/data_partitions/', exist_ok=True)
-    df = load_data(str(data_path))
+    df = load_table(str(data_path))
     cfgs = []
     for partition_id, idxs in enumerate(np.array_split(df.index, n_partitions)):
         partition_path = f'{data_dir}/data_partitions/{partition_id}_{filename}'
-        save_data(df.loc[idxs], partition_path, index_label='index')
+        save_table(df.loc[idxs], partition_path, index_label='index')
         cfgs.append(dict(data_path=partition_path, **cfg))
 
     # Submit your function and inputs as a job array

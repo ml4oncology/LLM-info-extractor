@@ -7,7 +7,7 @@ import json
 
 import pandas as pd
 
-from llm_info_extractor.util import load_data, save_data
+from ml_common.util import load_table, save_table
 
 
 def fix_failed_output(df: pd.DataFrame):
@@ -62,10 +62,10 @@ def parse_args():
 
 def main():
     args = parse_args()
-    res = pd.concat([load_data(path) for path in glob.glob(args.partition_filepath)])
+    res = pd.concat([load_table(path) for path in glob.glob(args.partition_filepath)])
     res = fix_failed_output(res)
     res = res.sort_values(by='index')
-    save_data(res, args.output_filepath, index=False)
+    save_table(res, args.output_filepath, index=False)
     
 if __name__ == '__main__':
     main()
