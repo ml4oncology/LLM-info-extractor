@@ -106,6 +106,9 @@ def main(cfg: dict):
     df = pd.concat([df, results], axis=1)
     save_table(df, save_path, index=False)
 
+    # delete the checkpoint
+    os.remove(f'{data_dir}/checkpoint_{filename}.pkl')
+
 
 def launch(cfg):
     """Use submitit to launch jobs in the SLURM cluster
@@ -142,7 +145,7 @@ def launch(cfg):
     cfgs = []
     for partition_id, idxs in enumerate(np.array_split(df.index, n_partitions)):
         partition_path = f'{data_dir}/data_partitions/{partition_id}_{filename}'
-        save_table(df.loc[idxs], partition_path, index_label='index')
+        save_table(df.loc[idxs].reset_index(), partition_path, index=False)
         cfgs.append(dict(data_path=partition_path, **cfg))
 
     # Submit your function and inputs as a job array
