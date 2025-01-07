@@ -12,7 +12,7 @@ import pandas as pd
 import submitit
 from torch.utils.data import Dataset
 
-from .model import MistralModel, LlamaModel
+from llm_info_extractor.model import MistralModel, LlamaModel
 from ml_common.util import load_table, save_table
 
 class PromptDataset(Dataset):
