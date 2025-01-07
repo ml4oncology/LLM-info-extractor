@@ -1,9 +1,10 @@
 """
 LLM Classes
 """
+import os
 from typing import Optional
 
-from ml_common.util import save_pickle
+from ml_common.util import load_pickle, save_pickle
 
 import json
 import torch
@@ -60,7 +61,8 @@ class MistralModel(LLM):
         dataset: Dataset, 
         save_dir: str, 
         filename: str, 
-        kwargs: Optional[None]
+        checkpoint: bool = True,
+        kwargs: Optional[dict] = None
     ):
         if kwargs is None:
             kwargs = dict(max_new_tokens=200, return_full_text=False, batch_size=1, pad_token_id=self.tokenizer.eos_token_id)
@@ -73,6 +75,13 @@ class MistralModel(LLM):
             device_map="auto",
             temperature=1
         )
+
+        # resume from checkpoint if exists
+        if os.path.exists(f'{save_dir}/checkpoint_{filename}.pkl') and checkpoint:
+            results = load_pickle(save_dir, f'checkpoint_{filename}')
+            dataset = dataset[len(results):]
+        else:
+            results = []
 
         for i, seq in tqdm(enumerate(pipe(dataset, **kwargs))):
             generated_text = seq[0]['generated_text']
@@ -114,10 +123,19 @@ class LlamaModel(LLM):
         dataset: list, 
         save_dir: str, 
         filename: str, 
-        kwargs: Optional[None]
+        checkpoint: bool = True,
+        kwargs: Optional[dict] = None
     ):
         if kwargs is None:
             kwargs = dict(temperature=1.5, top_p=0.9, top_k=50, min_p=0.1)
+
+
+        # resume from checkpoint if exists
+        if os.path.exists(f'{save_dir}/checkpoint_{filename}.pkl') and checkpoint:
+            results = load_pickle(save_dir, f'checkpoint_{filename}')
+            dataset = dataset[len(results):]
+        else:
+            results = []
 
         for i, messages in tqdm(enumerate(dataset)):
             response = self.model.create_chat_completion(messages=messages, **kwargs)

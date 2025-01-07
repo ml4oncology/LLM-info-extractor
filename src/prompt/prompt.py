@@ -1,30 +1,19 @@
 """Extract information from clinical notes through prompting LLMs
 
-NOTE: Currently only supports Mistral-7B-Instruct. Will support other models like Llama3-8B-Instruct soon.
+NOTE: Currently only supports Mistral-7B-Instruct and Llama3-8B-Instruct. More coming soon.
 """
 import argparse
 import os
 from pathlib import Path
 
 from datetime import datetime
-import json
 import numpy as np
 import pandas as pd
 import submitit
-import torch
 from torch.utils.data import Dataset
-from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 
-from ml_common.util import load_pickle, load_table, save_pickle, save_table
-
-quant_config_4bit = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_use_double_quant=False,
-)
-
+from .model import MistralModel, LlamaModel
+from ml_common.util import load_table, save_table
 
 class PromptDataset(Dataset):
     def __init__(self, prompts, tokenizer):
@@ -37,16 +26,12 @@ class PromptDataset(Dataset):
     def __getitem__(self, i):
         return self.tokenizer.apply_chat_template(self.prompts[i], tokenize=False)
 
-
-def construct_prompt(system_instructions: str, clinical_text: str):
-    return [{"role": "user", "content": f"{system_instructions}\n{clinical_text}"}]
-
-
 def main(cfg: dict):
     # process the config arguments
     data_path = cfg['data_path']
     data_dir, filename = Path(data_path).parent, Path(data_path).name
     text_col = cfg['text_col']
+    model_name = cfg['model_name']
     model_path = cfg['model_path']
     prompt_path = cfg['prompt_path']
     save_path = cfg['save_path']
@@ -56,50 +41,25 @@ def main(cfg: dict):
     # load data
     df = load_table(data_path)
 
-    # load model and tokenizer
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        device_map="auto",
-        quantization_config=quant_config_4bit
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # load model
+    if model_name == 'mistral':
+        llm = MistralModel(model_path)
+    elif model_name == 'llama':
+        llm = LlamaModel(model_path)
 
-    # set up pipeline
-    pipe = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        device_map="auto",
-        temperature=1
-    )
-        
     # set up prompts
     with open(prompt_path, 'r', encoding='utf-8') as file:
         system_instructions = file.read()
-    prompts = [construct_prompt(system_instructions, clinical_text) for clinical_text in df[text_col]]
-    dataset = PromptDataset(prompts, tokenizer)
+    prompts = [llm.construct_prompt(system_instructions, clinical_text) for clinical_text in df[text_col]]
 
-    # resume from checkpoint if exists
-    if os.path.exists(f'{data_dir}/checkpoint_{filename}.pkl'):
-        results = load_pickle(data_dir, f'checkpoint_{filename}')
-        dataset = dataset[len(results):]
-    else:
-        results = []
+    # set up dataset
+    if model_name == 'mistral':
+        dataset = PromptDataset(prompts, llm.tokenizer)
+    elif model_name == 'llama':
+        dataset = prompts
 
     # generate text
-    kwargs = dict(max_new_tokens=200, return_full_text=False, batch_size=1, pad_token_id=tokenizer.eos_token_id)
-    for i, seq in tqdm(enumerate(pipe(dataset, **kwargs))):
-        generated_text = seq[0]['generated_text']
-        try:
-            result = json.loads(generated_text)
-        except json.JSONDecodeError:
-            result = {'failed_output': generated_text}
-        results.append(result)
-
-        # save checkpoints at every 100th data point
-        if i % 100 == 0:
-            save_pickle(results, data_dir, f'checkpoint_{filename}')
-
+    results = llm.generate_responses(dataset, data_dir, filename)
     results = pd.DataFrame(results)
 
     # save the results
@@ -160,6 +120,8 @@ if __name__ == '__main__':
     parser.add_argument('--data-path', type=str, required=True, help='Path to the dataset')
     parser.add_argument('--text-col', type=str, default='text', help='Name of column containing the text')
     parser.add_argument('--prompt-path', type=str, required=True, help='Path to the text file containing the system prompt')
+    parser.add_argument('--model-name', type=str, choices=['mistral', 'llama'], required=True, 
+                        help='Name of the pre-trained large language model')
     parser.add_argument('--model-path', type=str, required=True, help='Path to the pre-trained large language model')
     parser.add_argument('--save-path', type=str, help='Where to save the results')
     cfg = vars(parser.parse_args())
