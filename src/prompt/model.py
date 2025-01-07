@@ -8,7 +8,7 @@ from ml_common.util import load_pickle, save_pickle
 
 import json
 import torch
-from llama import Llama
+from llama_cpp import Llama
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
