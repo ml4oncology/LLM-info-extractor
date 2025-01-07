@@ -8,7 +8,6 @@ from ml_common.util import load_pickle, save_pickle
 
 import json
 import torch
-from llama_cpp import Llama
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
@@ -104,6 +103,9 @@ class LlamaModel(LLM):
         self.model_path = model_path
 
     def load_model(self):
+        # unfortunately need to do the import here
+        # llama_cpp can only be imported on a GPU job node but the main script runs on a non-GPU job node
+        from llama_cpp import Llama
         return Llama(
             model_path=self.model_path,
             n_gpu_layers=-1, # use all GPU acceleration
