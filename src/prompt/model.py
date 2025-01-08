@@ -32,8 +32,8 @@ class LLM:
 
 class MistralModel(LLM):
     def __init__(self, model_path: str):
-        super().__init__()
         self.model_path = model_path
+        super().__init__()
         self.quant_config_4bit = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -99,8 +99,8 @@ class MistralModel(LLM):
 
 class LlamaModel(LLM):
     def __init__(self, model_path: str):
-        super().__init__()
         self.model_path = model_path
+        super().__init__()
 
     def load_model(self):
         # unfortunately need to do the import here
