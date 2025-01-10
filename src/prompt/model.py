@@ -56,7 +56,6 @@ class MistralModel(LLM):
     
     def generate_responses(
         self, 
-        results: list, 
         dataset: Dataset, 
         save_dir: str, 
         filename: str, 
@@ -121,7 +120,6 @@ class LlamaModel(LLM):
         
     def generate_responses(
         self, 
-        results: list, 
         dataset: list, 
         save_dir: str, 
         filename: str, 
