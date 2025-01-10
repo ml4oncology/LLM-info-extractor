@@ -51,7 +51,7 @@ class MistralModel(LLM):
     def load_tokenizer(self):
         return AutoTokenizer.from_pretrained(self.model_path)
 
-    def construct_prompt(system_instructions: str, clinical_text: str):
+    def construct_prompt(self, system_instructions: str, clinical_text: str):
         return [{"role": "user", "content": f"{system_instructions}\n{clinical_text}"}]
     
     def generate_responses(
@@ -113,7 +113,7 @@ class LlamaModel(LLM):
             n_ctx=4096 # context window
         )
 
-    def construct_prompt(system_instructions: str, clinical_text: str):
+    def construct_prompt(self, system_instructions: str, clinical_text: str):
         return [
             {"role": "system",  "content": system_instructions},
             {"role": "user",  "content": clinical_text}
