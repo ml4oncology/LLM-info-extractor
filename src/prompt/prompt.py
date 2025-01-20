@@ -88,7 +88,7 @@ def launch(cfg):
         slurm_array_parallelism=4, # Limit job concurrency to 4 jobs at a time
         nodes=1, # Each job in the job array gets one node
         mem_gb=4, # Each job gets 4GB of memory
-        timeout_min=48 * 60, # Limit the job running time to 2 days
+        timeout_min=24 * 60, # Limit the job running time to 1 day
         slurm_gpus_per_node=1, # Each node should use 1 GPU
         slurm_additional_parameters={
             "account": "gliugroup_gpu",

@@ -12,6 +12,14 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 
+
+QUANT_CONFIG_4BIT = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=False,
+)
+
 class LLM:
     def __init__(self):
         self.model = self.load_model()
@@ -33,19 +41,14 @@ class LLM:
 class MistralModel(LLM):
     def __init__(self, model_path: str):
         self.model_path = model_path
+        self.quant_config = QUANT_CONFIG_4BIT
         super().__init__()
-        self.quant_config_4bit = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=False,
-        )
 
     def load_model(self):
         return AutoModelForCausalLM.from_pretrained(
             self.model_path,
             device_map="auto",
-            quantization_config=self.quant_config_4bit
+            quantization_config=self.quant_config
         )
 
     def load_tokenizer(self):
