@@ -52,7 +52,7 @@ def parse_args():
         type=str, 
         help=(
             "Path to files to be merged; enclose in quotes, accepts * as wildcard for directories or filenames "
-            "(e.g. './data_partitions/prompted_*_pe_thorax_ct.xlsx)'"
+            "(e.g. './data_partitions/prompted_*_pe_thorax_ct.xlsx')"
         )
     )
     parser.add_argument('--output-filepath', type=str, help='Where to output the combined result')

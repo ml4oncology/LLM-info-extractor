@@ -1,17 +1,20 @@
 """
 LLM Classes
 """
+import json
 import os
 from typing import Optional
 
-from ml_common.util import load_pickle, save_pickle
-
-import json
 import torch
+from ml_common.util import load_pickle, save_pickle
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
-
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    pipeline,
+)
 
 QUANT_CONFIG_4BIT = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -117,8 +120,8 @@ class LlamaModel(LLM):
 
     def construct_prompt(self, system_instructions: str, clinical_text: str):
         return [
-            {"role": "system",  "content": system_instructions},
-            {"role": "user",  "content": clinical_text}
+            {"role": "system", "content": system_instructions},
+            {"role": "user", "content": clinical_text}
         ]
         
     def generate_responses(

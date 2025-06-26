@@ -4,16 +4,16 @@ NOTE: Currently only supports Mistral-7B-Instruct and Llama3-8B-Instruct. More c
 """
 import argparse
 import os
+from datetime import datetime
 from pathlib import Path
 
-from datetime import datetime
 import numpy as np
 import pandas as pd
 import submitit
+from llm_info_extractor.prompt.model import LlamaModel, MistralModel
+from ml_common.util import load_table, save_table
 from torch.utils.data import Dataset
 
-from llm_info_extractor.prompt.model import MistralModel, LlamaModel
-from ml_common.util import load_table, save_table
 
 class PromptDataset(Dataset):
     def __init__(self, prompts, tokenizer):
