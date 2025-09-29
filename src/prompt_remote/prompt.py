@@ -34,9 +34,13 @@ class Prompter:
         llm_params: dict | None = None
     ):
         """
-        Generate responses for a list of chats.
+        Generate responses for a list of chats. Sends all requests in a single batch to the vLLM server.
 
-        Sends all requests in a single batch to the vLLM server.
+        WARNING: This client.completions.create API endpoint is now in legacy. 
+        But it is still useful for 
+            - GGUF models whose file does not include chat template metadata
+            - models whose chat templates may not be supported by ChatML used by OpenAI
+        In those cases, we can apply chat templates to messages ourselves and send the prompt as is to the server.
 
         See https://huggingface.co/docs/transformers/en/chat_templating
 
@@ -59,7 +63,7 @@ class Prompter:
         prompts = [self.tokenizer.apply_chat_template(msgs, **kwargs) for msgs in chats]
 
         # send the requests to the vLLM server
-        # Hmm, beware, this API endpoint is now in legacy. 
+        # Beware, this API endpoint is now in legacy.
         # But the batch API does not support local models... https://platform.openai.com/docs/guides/batch
         # Also, DO NOT RETRY if the process crashes, as it will not be able to cancel the requests
         # (as in the remote vLLM server will continue to process all the prompts)
@@ -75,20 +79,77 @@ class Prompter:
         return response
     
 
-    async def generate_json_responses(        
-        self, 
-        chats: list, 
-        model_name: str, 
+    def generate_concurrent_json_responses(
+        self,
+        chats: list,
+        model_name: str,
         response_format: BaseModel,
         max_tokens: int = 4096,
         extra_body: dict | None = None, 
         llm_params: dict | None = None
     ):
         """
-        Generate responses that's guaranteed to be specific JSON format
+        Generate responses for a list of chats, in which response is guaranteed to be a specific JSON format.
+        Executes requests asynchronously / concurrently to speed up the process.
 
-        This API endpoint is in beta version and only allows one request at a time.
-        Run all requests concurrently (in parallel) to speed up the process.
+        The client.chat.completions.parse API endpoint only allows one request at a time (does not send requests in batches).
+
+        Args:
+            chats (list): A list of chat sessions, where each session is
+                a list of dictionaries with role and content keys describing
+                the chat messages to send to the model.
+            model_name (str): The name of the model to use for inference.
+            response_format (BaseModel): The Pydantic model that defines the expected JSON response format
+            max_tokens (int): The maximum number of tokens to generate.
+            extra_body (dict, optional): Additional parameters to include in the request body.
+            llm_params (dict, optional): Additional parameters for the LLM request.
+        """
+        return asyncio.run(
+            self._generate_concurrent_json_responses(chats, model_name, response_format, max_tokens, extra_body, llm_params)
+        )
+
+
+    async def _generate_concurrent_json_responses(
+        self,
+        chats: list,
+        model_name: str,
+        response_format: BaseModel,
+        max_tokens: int = 4096,
+        extra_body: dict | None = None, 
+        llm_params: dict | None = None
+    ):
+        if extra_body is None:
+            extra_body = {}
+        if llm_params is None:
+            llm_params = {}
+
+        async def get_response(chat):
+            return await self.async_client.chat.completions.parse(
+                model=model_name,
+                messages=chat,
+                response_format=response_format,
+                max_tokens=max_tokens,
+                extra_body=extra_body,
+                **llm_params
+            )
+        
+        responses = [get_response(chat) for chat in chats]
+        responses = await asyncio.gather(*responses) # nice, asyncio.gather preserves order
+        return responses
+    
+
+    def generate_json_responses(
+        self,
+        chats: list,
+        model_name: str,
+        response_format: BaseModel,
+        max_tokens: int = 4096,
+        extra_body: dict | None = None, 
+        llm_params: dict | None = None
+    ):
+        """
+        Generate responses for a list of chats, in which response is guaranteed to be a specific JSON format.
+        Executes requests synchronously (i.e. one at a time).
 
         Args:
             chats (list): A list of chat sessions, where each session is
@@ -105,8 +166,8 @@ class Prompter:
         if llm_params is None:
             llm_params = {}
 
-        async def get_response(chat):
-            return await self.async_client.beta.chat.completions.parse(
+        def get_response(chat):
+            return self.client.chat.completions.parse(
                 model=model_name,
                 messages=chat,
                 response_format=response_format,
@@ -114,10 +175,8 @@ class Prompter:
                 extra_body=extra_body,
                 **llm_params
             )
-        
-        responses = [get_response(chat) for chat in chats]
-        responses = await asyncio.gather(*responses) # nice, asyncio.gather preserves order
-        return responses
+
+        return [get_response(chat) for chat in chats]
     
     
     def json_to_df(self, json_texts):
@@ -132,8 +191,5 @@ class Prompter:
         df = pd.DataFrame(output)
         df = fix_failed_output(df)
         return df
-
-
-        
 
     
